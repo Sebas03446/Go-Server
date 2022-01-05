@@ -1,0 +1,45 @@
+# This Docker Compose file can be used to quickly bootup Dgraph Zero
+# and Alpha in different Docker containers.
+
+# It mounts /tmp/data on the host machine to /dgraph within the
+# container. You can change /tmp/data to a more appropriate location.
+# Run `docker-compose up` to start Dgraph.
+#docker run -it -p 8081:8080 dgraph/standalone:master
+
+version: "3.2"
+services:
+  zero:
+    image: dgraph/standalone:master
+    volumes:
+      - type: volume
+        source: dgraph
+        target: /dgraph
+        volume:
+          nocopy: true
+    ports:
+      - 5080:5080
+      - 6080:6080
+    restart: on-failure
+    command: dgraph zero --my=zero:5080
+  alpha:
+    image: dgraph/standalone:master
+    volumes:
+      - type: volume
+        source: dgraph
+        target: /dgraph
+        volume:
+          nocopy: true
+    ports:
+      - 8082:8080
+      - 9081:9080
+    restart: on-failure
+    command: dgraph alpha --my=alpha:7080 --security whitelist=172.0.0.1:172.22.0.1 --zero=zero:5080
+  ratel:
+    image: dgraph/ratel:latest
+    ports:
+      - 8000:8000
+    command: dgraph-ratel
+
+volumes:
+  dgraph:
+
