@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -48,7 +47,7 @@ func ClientInit() {
 			newMessage := Message{Name: operation, Channel: "", SizeField: 0, TypeOfData: "", Data: []byte{}}
 			err = gob.NewEncoder(conn).Encode(&newMessage)
 			if err != nil {
-				fmt.Println(err, "inicio")
+				fmt.Println(err)
 				continue
 			}
 			name = res1[1]
@@ -114,7 +113,7 @@ func receive(conn net.Conn) {
 	var message Message
 	err := gob.NewDecoder(conn).Decode(&message)
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 	if message.TypeOfData == "FileData" {
 		fmt.Println("Data downloaded!")
