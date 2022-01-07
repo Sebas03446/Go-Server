@@ -98,24 +98,24 @@ func handleConnection(conn net.Conn, channelList *ChannelList) {
 	}
 }
 func create(client net.Conn, channelList *ChannelList) {
-	var channel Channel
-	err := gob.NewDecoder(client).Decode(&channel)
+	var Channel Channel
+	err := gob.NewDecoder(client).Decode(&Channel)
 	if err != nil {
 		return
 	}
-	fmt.Println(channel)
+	fmt.Println(Channel)
 	for value := range channelList.Channels {
-		if channelList.Channels[value].Name == channel.Name {
+		if channelList.Channels[value].Name == Channel.Name {
 			data := []byte("error, channel already exists")
-			message := Message{Name: "Server", Channel: channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
+			message := Message{Name: "Server", Channel: Channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
 			gob.NewEncoder(client).Encode(&message)
 			fmt.Println("Channel already exists")
 			return
 		}
 	}
-	channelList.Channels = append(channelList.Channels, channel)
+	channelList.Channels = append(channelList.Channels, Channel)
 	data := []byte("Channel created")
-	message := Message{Name: "Server", Channel: channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
+	message := Message{Name: "Server", Channel: Channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
 	gob.NewEncoder(client).Encode(message)
 }
 func suscribe(client net.Conn, channelList *ChannelList) {
