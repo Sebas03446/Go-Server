@@ -3,20 +3,21 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
+	"log"
 	"net"
 	"os"
-	"sync"
 )
 
 func main() {
 	ServerInit()
 }
 
-type FileData struct {
-	Name      string
-	Channel   string
-	SizeField int
-	Data      []byte
+type Message struct {
+	Name       string
+	Channel    string
+	SizeField  int
+	TypeOfData string
+	Data       []byte
 }
 type Channel struct {
 	Name    string
@@ -26,6 +27,10 @@ type Channel struct {
 type ChannelList struct {
 	Channels []Channel
 }
+
+var (
+	channelList ChannelList
+)
 
 func ServerInit() {
 	arguments := os.Args
@@ -37,8 +42,8 @@ func ServerInit() {
 	COMMAND := arguments[1]
 
 	if COMMAND == "start" {
-		var channelList ChannelList
-		server, err := net.Listen("tcp4", ":8000")
+
+		server, err := net.Listen("tcp", ":8000")
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -58,108 +63,103 @@ func ServerInit() {
 		return
 	}
 }
-func handleConnection(client net.Conn, channelList *ChannelList) {
-	var wg sync.WaitGroup
-	var lock sync.RWMutex
-	fmt.Printf("Serving %s\n", client.RemoteAddr().String())
-	clientNumber := client.RemoteAddr().String()
-	err := gob.NewEncoder(client).Encode("The client " + clientNumber[10:len(clientNumber)-1] + " is connected!")
+func handleConnection(conn net.Conn, channelList *ChannelList) {
+	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
+	clientNumber := conn.RemoteAddr().String()
+	message := writeMessage("The client " + clientNumber[10:len(clientNumber)-1] + " is connected!")
+	err := gob.NewEncoder(conn).Encode(&message)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	for {
-		var operation string
-		err = gob.NewDecoder(client).Decode(&operation)
-		if err != nil {
-			continue
-		}
-		fmt.Println(operation + " Paso")
-		if operation == "send" {
-			wg.Add(1)
-			go send(client, channelList, &wg, &lock)
-		} else if operation == "suscribe" {
-			wg.Add(1)
-			go suscribe(client, channelList, &wg, &lock)
-		} else if operation == "create" {
-			fmt.Println("Creating channel")
-			wg.Add(1)
-			go create(client, channelList, &wg, &lock)
+		opMessage := readMessage(conn)
+		fmt.Println(opMessage.Name)
+		if opMessage.Name == "send" {
+			fmt.Println("the data is in send")
+			send(conn, channelList)
+		} else if opMessage.Name == "suscribe" {
+			suscribe(conn, channelList)
+		} else if opMessage.Name == "create" {
+			fmt.Println("the data is in create")
+			create(conn, channelList)
 
+		} else {
+			fmt.Println("the data is in else")
 		}
 
 	}
 }
-func send(client net.Conn, channelList *ChannelList, wg *sync.WaitGroup, lock *sync.RWMutex) {
-	var fileData FileData
-	err := gob.NewDecoder(client).Decode(&fileData)
-	if err != nil {
-		return
-	}
-	fmt.Println(fileData)
-	for value := range channelList.Channels {
-		if channelList.Channels[value].Name == fileData.Channel {
-			for _, clientData := range channelList.Channels[value].Clients {
-				fmt.Println("stay in the channel")
-				gob.NewEncoder(clientData).Encode("FileData")
-				err = gob.NewEncoder(clientData).Encode(fileData)
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
-				gob.NewEncoder(client).Encode("Response")
-				gob.NewEncoder(client).Encode("Data sent")
-			}
-		}
-		fmt.Println(value)
-	}
-	gob.NewEncoder(client).Encode("Response")
-	gob.NewEncoder(client).Encode("The channel does not exist!")
-}
-func create(client net.Conn, channelList *ChannelList, wg *sync.WaitGroup, lock *sync.RWMutex) {
+func create(client net.Conn, channelList *ChannelList) {
 	var channel Channel
 	err := gob.NewDecoder(client).Decode(&channel)
 	if err != nil {
 		return
 	}
-	gob.NewEncoder(client).Encode("response")
+	fmt.Println(channel)
 	for value := range channelList.Channels {
 		if channelList.Channels[value].Name == channel.Name {
-			gob.NewEncoder(client).Encode("Channel already exists")
+			data := []byte("error, channel already exists")
+			message := Message{Name: "Server", Channel: channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
+			gob.NewEncoder(client).Encode(&message)
 			fmt.Println("Channel already exists")
 			return
 		}
 	}
 	channelList.Channels = append(channelList.Channels, channel)
-	gob.NewEncoder(client).Encode("Channel created")
-	//fmt.Println("add channel" + channel.Name)
-	//continue
+	data := []byte("Channel created")
+	message := Message{Name: "Server", Channel: channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
+	gob.NewEncoder(client).Encode(message)
 }
-func suscribe(client net.Conn, channelList *ChannelList, wg *sync.WaitGroup, lock *sync.RWMutex) {
-	defer wg.Done()
-	lock.Lock()
+func suscribe(client net.Conn, channelList *ChannelList) {
 	var channelName string
 	err := gob.NewDecoder(client).Decode(&channelName)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	gob.NewEncoder(client).Encode("response")
 	for value := range channelList.Channels {
 		if channelList.Channels[value].Name == channelName {
 			if contains(channelList.Channels[value].Clients, client) {
-				gob.NewEncoder(client).Encode("Client already exist")
+				data := "error, you are already suscribed"
+				message := writeMessage(data)
+				gob.NewEncoder(client).Encode(&message)
 			} else {
 				channelList.Channels[value].Clients = append(channelList.Channels[value].Clients, client)
-				gob.NewEncoder(client).Encode("Client added to channel")
-				fmt.Println("Client added to channel")
+				data := "Client added to channel"
+				message := writeMessage(data)
+				gob.NewEncoder(client).Encode(&message)
 				return
 			}
 
 		}
 	}
-	gob.NewEncoder(client).Encode("The channel is not created")
-	lock.Unlock()
+	data := "The channel is not created"
+	message := writeMessage(data)
+	gob.NewEncoder(client).Encode(message)
+
+}
+func send(client net.Conn, channelList *ChannelList) {
+	fileData := readMessage(client)
+	fmt.Println(fileData, "fileData", fileData.TypeOfData)
+	for value := range channelList.Channels {
+		if channelList.Channels[value].Name == fileData.Channel {
+			fmt.Println("the channel is found")
+			for _, clientData := range channelList.Channels[value].Clients {
+				fmt.Println(clientData, "clientData")
+				fmt.Println(client, "client")
+				err := gob.NewEncoder(clientData).Encode(&fileData)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				fmt.Println("the data is sent")
+			}
+			return
+		}
+	}
+	message := writeMessage("The channel does not exist!")
+	gob.NewEncoder(client).Encode(message)
 }
 func contains(clients []net.Conn, client net.Conn) bool {
 	for _, value := range clients {
@@ -168,4 +168,17 @@ func contains(clients []net.Conn, client net.Conn) bool {
 		}
 	}
 	return false
+}
+func readMessage(conn net.Conn) Message {
+	var message Message
+	err := gob.NewDecoder(conn).Decode(&message)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return message
+}
+func writeMessage(msg string) Message {
+	fmt.Println(msg)
+	response := Message{Name: "message", Channel: "nil", SizeField: len([]byte(msg)), TypeOfData: "string", Data: []byte(msg)}
+	return response
 }
