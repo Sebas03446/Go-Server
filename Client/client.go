@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -33,57 +35,53 @@ func ClientInit() {
 	}
 	defer conn.Close()
 	var operation string
-	var name string
-	var channel string
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		go receive(conn)
-		_, err := fmt.Scan(&operation)
-		if err != nil {
-			fmt.Println(err, "read operation")
-		}
-		newMessage := Message{Name: operation, Channel: "", SizeField: 0, TypeOfData: "", Data: []byte{}}
-		err = gob.NewEncoder(conn).Encode(&newMessage)
-		if err != nil {
-			fmt.Println(err, "inicio")
-			continue
-		}
-		if operation == "send" {
-			_, err := fmt.Scan(&name)
+		text, _ := reader.ReadString('\n')
+		text = strings.Replace(text, "\n", "", -1)
+		res1 := strings.Split(text, " ")
+		operation = res1[0]
+		if operation == "send" && len(res1) == 3 {
+			var name string
+			var channel string
+			newMessage := Message{Name: operation, Channel: "", SizeField: 0, TypeOfData: "", Data: []byte{}}
+			err = gob.NewEncoder(conn).Encode(&newMessage)
 			if err != nil {
-				fmt.Println(err, "read name")
+				fmt.Println(err, "inicio")
 				continue
 			}
-			_, err = fmt.Scan(&channel)
-			if err != nil {
-				fmt.Println(err, "read channel")
-				continue
-			}
+			name = res1[1]
+			channel = res1[2]
 			send(name, channel, conn)
 
-		} else if operation == "create" {
-			_, err := fmt.Scan(&name)
+		} else if operation == "create" && len(res1) == 2 {
+			var name string
+			newMessage := Message{Name: operation, Channel: "", SizeField: 0, TypeOfData: "", Data: []byte{}}
+			err = gob.NewEncoder(conn).Encode(&newMessage)
 			if err != nil {
-				_, err := fmt.Scan(&name)
-				if err != nil {
-					fmt.Println(err, "read name")
-					continue
-				}
+				fmt.Println(err, "inicio")
+				continue
 			}
+			name = res1[1]
+
 			channel := Channel{name, []net.Conn{}}
 			err = gob.NewEncoder(conn).Encode(&channel)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
-		} else if operation == "suscribe" {
-			_, err := fmt.Scan(&channel)
+		} else if operation == "suscribe" && len(res1) == 2 {
+			var Channel string
+			newMessage := Message{Name: operation, Channel: "", SizeField: 0, TypeOfData: "", Data: []byte{}}
+			err = gob.NewEncoder(conn).Encode(&newMessage)
 			if err != nil {
-				log.Fatal(err)
+				fmt.Println(err, "inicio")
+				continue
 			}
-			fmt.Println("Suscribing to channel: " + channel)
-			suscribe(channel, conn)
-		} else if operation == "receive" {
-			go receive(conn)
+			Channel = res1[1]
+			fmt.Println("Suscribing to channel: " + Channel)
+			suscribe(Channel, conn)
 		} else {
 			continue
 		}
@@ -91,10 +89,7 @@ func ClientInit() {
 	}
 }
 func send(name string, channel string, conn net.Conn) {
-
-	fmt.Println(channel)
 	data, err := ioutil.ReadFile(name)
-	fmt.Println(string(data))
 	if err != nil {
 		fmt.Println(err)
 	}
