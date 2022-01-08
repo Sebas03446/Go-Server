@@ -1,0 +1,13 @@
+SELECT tpad.f9920_fecha_ts_creacion AS FechaVenta, 
+tpad.f9920_id_cliente_pdv AS doctoIdentidad, 
+tpad.f9920_valor_bruto AS valorFacturaSinDescuentos,
+tpad.f9920_valor_bruto-tpad.f9920_valor_dscto_linea -tpad.f9920_valor_dscto_global as valorConDescuento,
+CONCAT('[',substring((SELECT CONCAT(',{"producto":',tmi.f120_rowid,'"Cantidad:"',COUNT(*),'}') FROM t9920_pdv_a_doctos tpad 
+-- JOIN t9740_pdv_clientes tpc on tpad.f9920_id_cliente_pdv  = tpc.f9740_id 
+INNER JOIN t9930_pdv_a_movto_venta tpamv ON tpamv.f9930_guid_docto = tpad.f9920_guid
+INNER JOIN t120_mc_items tmi ON tmi.f120_rowid = tpamv.f9930_rowid_item_ext 
+WHERE tpad.f9920_id_cliente_pdv = '71361902'
+AND tpad.f9920_guid ='36514F3C-BBCA-E411-9C93-001CC0727E80'GROUP BY tmi.f120_rowid HAVING COUNT(*) >= 1
+FOR XML PATH ('')),2,1000)) as DetallesFactura
+FROM t9920_pdv_a_doctos tpad WHERE tpad.f9920_id_cliente_pdv = '71361902' AND tpad.f9920_guid ='36514F3C-BBCA-E411-9C93-001CC0727E80'
+order by tpad.f9920_fecha_ts_creacion;
