@@ -198,11 +198,11 @@ func readMessage(conn net.Conn, dec *gob.Decoder) Message {
 		if err == io.EOF {
 			fmt.Println("Client disconnected")
 			for i := range channelList {
-				fmt.Println("paso", i)
 				for j := range channelList[i].Clients {
 					fmt.Println("paso2", j)
 					if channelList[i].Clients[j] == conn {
 						channelList[i].Clients = append(channelList[i].Clients[:j], channelList[i].Clients[j+1:]...)
+						break
 					}
 				}
 			}
