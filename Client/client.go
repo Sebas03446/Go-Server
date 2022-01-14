@@ -93,6 +93,14 @@ func send(name string, channel string, conn net.Conn, enc *gob.Encoder) {
 	data, err := ioutil.ReadFile(name)
 	if err != nil {
 		fmt.Println(err)
+		errorFile := []byte("Error")
+		fileData := Message{"Error", channel, len(errorFile), "String", errorFile}
+		err = enc.Encode(&fileData)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		return
 	}
 	res1 := strings.Split(name, "/")
 	typeofData := "FileData"
