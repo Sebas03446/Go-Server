@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 )
 
 func main() {
@@ -46,10 +47,12 @@ func ServerInit() {
 			return
 		}
 		defer server.Close()
+		fmt.Println("Server is running")
 		for {
 			client, err := server.Accept()
 			if err != nil {
-				log.Fatal(err)
+				fmt.Println("FAIL IN CONNECTION WITH CLIENT!")
+				continue
 			}
 			go handleConnection(client)
 		}
@@ -61,6 +64,7 @@ func ServerInit() {
 func handleConnection(conn net.Conn) {
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
+	var lock sync.RWMutex
 	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
 	clientNumber := conn.RemoteAddr().String()
 	message := writeMessage("The client " + clientNumber[10:] + " is connected!")
@@ -70,43 +74,57 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	for {
-		opMessage := readMessage(conn, dec)
+		opMessage := readMessage(conn, dec, &lock)
 		fmt.Println(opMessage.Name)
 		if opMessage.Name == "send" {
 			fmt.Println("the data is in send")
-			send(conn, dec, enc)
+			send(conn, dec, enc, &lock)
 		} else if opMessage.Name == "suscribe" {
-			suscribe(conn, dec, enc)
+			suscribe(conn, dec, enc, &lock)
 		} else if opMessage.Name == "create" {
 			fmt.Println("the data is in create")
-			create(conn, dec, enc)
+			create(conn, dec, enc, &lock)
 
 		} else if opMessage.Name == "errorC" {
 			fmt.Println(string(opMessage.Data))
 			break
 		} else if opMessage.Name == "receive" {
 			message := writeMessage("File Send!")
-			enc.Encode(&message)
+			err := enc.Encode(&message)
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("error send message")
+			}
 		} else {
 			message := writeMessage("Server: Unknown command " + opMessage.Name)
-			enc.Encode(&message)
+			err := enc.Encode(&message)
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("error send message")
+			}
 		}
 
 	}
 }
-func create(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
+func create(client net.Conn, dec *gob.Decoder, enc *gob.Encoder, lock *sync.RWMutex) {
 	var Channel Channel
 	err := dec.Decode(&Channel)
 	if err != nil {
 		return
 	}
 	fmt.Println(Channel)
+	lock.Lock()
 	for value := range channelList {
 		if channelList[value].Name == Channel.Name {
 			data := []byte("error, channel already exists")
 			message := Message{Name: "Server", Channel: Channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
-			enc.Encode(&message)
+			err := enc.Encode(&message)
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("error send message")
+			}
 			fmt.Println("Channel already exists")
+			lock.Unlock()
 			return
 		}
 	}
@@ -114,43 +132,69 @@ func create(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
 	data := []byte("Channel created")
 	fmt.Println(channelList)
 	message := Message{Name: "Server", Channel: Channel.Name, SizeField: len(data), TypeOfData: "string", Data: data}
-	enc.Encode(message)
+	err = enc.Encode(message)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("error send message")
+	}
+	lock.Unlock()
 }
-func suscribe(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
+func suscribe(client net.Conn, dec *gob.Decoder, enc *gob.Encoder, lock *sync.RWMutex) {
 	var channelName string
 	err := dec.Decode(&channelName)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	lock.Lock()
+	fmt.Println("Stay later to lock")
 	for value := range channelList {
 		if channelList[value].Name == channelName {
 			if contains(channelList[value].Clients, client) {
 				data := "error, you are already suscribed"
 				message := writeMessage(data)
-				enc.Encode(&message)
+				err := enc.Encode(&message)
+				if err != nil {
+					fmt.Println(err)
+					fmt.Println("error send message")
+				}
+				lock.Unlock()
 				return
 			} else {
 				channelList[value].Clients = append(channelList[value].Clients, client)
 				data := "Client added to channel"
 				message := writeMessage(data)
-				enc.Encode(&message)
+				err := enc.Encode(&message)
+				if err != nil {
+					fmt.Println(err)
+					fmt.Println("error send message")
+				}
+				lock.Unlock()
 				return
 			}
 
 		}
+		fmt.Println("Stay here")
 	}
 	data := "The channel is not created"
 	message := writeMessage(data)
-	enc.Encode(message)
-
+	err = enc.Encode(message)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("error send message")
+	}
+	lock.Unlock()
 }
-func send(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
-	fileData := readMessage(client, dec)
+func send(client net.Conn, dec *gob.Decoder, enc *gob.Encoder, lock *sync.RWMutex) {
+	fileData := readMessage(client, dec, lock)
 	//fmt.Println(fileData, "fileData", fileData.TypeOfData)
 	if fileData.Name == "Error" {
 		messageForCLient := writeMessage("The file is not found")
-		enc.Encode(&messageForCLient)
+		err := enc.Encode(&messageForCLient)
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("error send message")
+		}
 		return
 	}
 	for value := range channelList {
@@ -159,7 +203,11 @@ func send(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
 			if len(channelList[value].Clients) == 0 {
 				data := "error, no clients in channel"
 				message := writeMessage(data)
-				enc.Encode(&message)
+				err := enc.Encode(&message)
+				if err != nil {
+					fmt.Println(err)
+					fmt.Println("error send message")
+				}
 				return
 			} else {
 				messageForCLient := writeMessage("The file is ready to be downloaded")
@@ -181,7 +229,11 @@ func send(client net.Conn, dec *gob.Decoder, enc *gob.Encoder) {
 		}
 	}
 	message := writeMessage("The channel does not exist!")
-	enc.Encode(message)
+	err := enc.Encode(message)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("error send message")
+	}
 }
 func contains(clients []net.Conn, client net.Conn) bool {
 	for _, value := range clients {
@@ -191,15 +243,15 @@ func contains(clients []net.Conn, client net.Conn) bool {
 	}
 	return false
 }
-func readMessage(conn net.Conn, dec *gob.Decoder) Message {
+func readMessage(conn net.Conn, dec *gob.Decoder, lock *sync.RWMutex) Message {
 	var message Message
 	err := dec.Decode(&message)
+	lock.RLock()
 	if err != nil {
 		if err == io.EOF {
 			fmt.Println("Client disconnected")
 			for i := range channelList {
 				for j := range channelList[i].Clients {
-					fmt.Println("paso2", j)
 					if channelList[i].Clients[j] == conn {
 						channelList[i].Clients = append(channelList[i].Clients[:j], channelList[i].Clients[j+1:]...)
 						break
@@ -208,10 +260,13 @@ func readMessage(conn net.Conn, dec *gob.Decoder) Message {
 			}
 			msg := "The client " + conn.RemoteAddr().String() + " get out"
 			response := Message{Name: "errorC", Channel: "nil", SizeField: len([]byte(msg)), TypeOfData: "string", Data: []byte(msg)}
+			lock.RUnlock()
 			return response
 		}
+		lock.RUnlock()
 		log.Fatal(err)
 	}
+	lock.RUnlock()
 	return message
 }
 func writeMessage(msg string) Message {
